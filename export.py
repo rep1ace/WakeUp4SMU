@@ -71,7 +71,7 @@ def upload_schedule():
 
 def export_to_ics(events: models.Iterable[models.SingleEvent], start_date: datetime.date) -> str:
     """
-    Export SingleEvent list to ICS format.
+    Export SingleEvent list to ICS format with Beijing Timezone (Asia/Shanghai).
     :param events: List of SingleEvent
     :param start_date: The start date of the first week (Week 1)
     :return: ICS string
@@ -82,23 +82,27 @@ def export_to_ics(events: models.Iterable[models.SingleEvent], start_date: datet
         "PRODID:-//SMU-CALENDAR//CN",
         "CALSCALE:GREGORIAN",
         "METHOD:PUBLISH",
+        "X-WR-TIMEZONE:Asia/Shanghai",  # 兼容部分日历软件的全局时区扩展属性
+        # --- 声明北京时间时区块 ---
+        "BEGIN:VTIMEZONE",
+        "TZID:Asia/Shanghai",
+        "X-LIC-LOCATION:Asia/Shanghai",
+        "BEGIN:STANDARD",
+        "TZOFFSETFROM:+0800",
+        "TZOFFSETTO:+0800",
+        "TZNAME:CST",
+        "DTSTART:19700101T000000",
+        "END:STANDARD",
+        "END:VTIMEZONE",
+        # ------------------------
     ]
 
     for event in events:
         # Calculate date
-        # start_date is usually Monday of Week 1
-        # event.zc is week number (1-based)
-        # event.xq is weekday (1-based, 1=Monday usually? Need to verify model, assuming 1=Mon based on common sense and timetable.py)
-        # Actually let's check timetable.py or fetcher.py. 
-        # In fetcher.py: i["xq"] comes from response. usually 1-7.
-        
         days_offset = (event.zc - 1) * 7 + (event.xq - 1)
         event_date = start_date + datetime.timedelta(days=days_offset)
         
         # Parse time
-        # event.qssj is like "08:00"
-        # event.jssj is like "09:40"
-        
         start_time_str = event.qssj.replace(":", "") + "00" # HHMMSS
         end_time_str = event.jssj.replace(":", "") + "00"
         
@@ -107,11 +111,17 @@ def export_to_ics(events: models.Iterable[models.SingleEvent], start_date: datet
         
         description = f"教师: {event.teaxms}\\n场地: {event.jxcdmc}\\n环节: {event.jxhjmc}\\n周次: {event.zc}\\n节次: {event.ps}-{event.pe}"
         
+        # ICS 标准中 DTSTAMP 应当使用 UTC 时间，末尾带 'Z' 表示 UTC
+        dtstamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+        
         ics_lines.append("BEGIN:VEVENT")
         ics_lines.append(f"UID:{uuid.uuid4()}@smu")
-        ics_lines.append(f"DTSTAMP:{datetime.datetime.now().strftime('%Y%m%dT%H%M%S')}")
-        ics_lines.append(f"DTSTART:{dtstart}")
-        ics_lines.append(f"DTEND:{dtend}")
+        ics_lines.append(f"DTSTAMP:{dtstamp}")
+        
+        # 在开始和结束时间显式加上时区 ID (TZID)
+        ics_lines.append(f"DTSTART;TZID=Asia/Shanghai:{dtstart}")
+        ics_lines.append(f"DTEND;TZID=Asia/Shanghai:{dtend}")
+        
         ics_lines.append(f"SUMMARY:{event.kcmc}")
         ics_lines.append(f"LOCATION:{event.jxcdmc}")
         ics_lines.append(f"DESCRIPTION:{description}")
